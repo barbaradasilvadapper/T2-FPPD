@@ -33,6 +33,7 @@
 
 // -------------------------------------------------------------------------
 // CÓDIGO COM SEMAFOROS:
+
 package main
 
 import (
@@ -41,123 +42,119 @@ import (
 	"time"
 )
 
-var (
-	elves     = 0
-	reindeer  = 0
-	santaSem  = FPPDSemaforo.NewSemaphore(0)
-	reinSem   = FPPDSemaforo.NewSemaphore(0)
-	elfTex    = FPPDSemaforo.NewSemaphore(1)
-	mutex     = FPPDSemaforo.NewSemaphore(1)
-	totalRein = 9
-	elfSem    = FPPDSemaforo.NewSemaphore(0)
-	santaBusy = FPPDSemaforo.NewSemaphore(1)
-	elvesDone = FPPDSemaforo.NewSemaphore(0)
-	reinDone = FPPDSemaforo.NewSemaphore(0)
+var elves = 0 // número de elfos
+var reindeer = 0 // número de renas
+var mutex = FPPDSemaforo.NewSemaphore(1) // protege acesso a counters
+var santaSem = FPPDSemaforo.NewSemaphore(0) // acorda o Papai Noel
+var reindeerSem = FPPDSemaforo.NewSemaphore(0) // renas esperando para serem presas ao trenó
+var elfTex = FPPDSemaforo.NewSemaphore(1) // limita número de elfos que podem pedir ajuda
 
-)
-
-func prepareSleigh() {
-	fmt.Println("Papai Noel: Preparando o trenó!")
-}
-
-func helpElves() {
-	fmt.Println("Papai Noel: Ajudando 3 elfos...")
-}
-
-func getHitched(id int) {
-	fmt.Printf("Rena %d foi atrelada ao trenó!\n", id)
-}
-
-func getHelp(id int) {
-	fmt.Printf("Elfo %d recebeu ajuda!\n", id)
-}
-
-// Santa loop
-func santa() {
-	for {
-		santaSem.Wait()
-		santaBusy.Wait()
-		mutex.Wait()
-		if reindeer == totalRein {
-			prepareSleigh()
-			for i := 0; i < totalRein; i++ {
-				reinSem.Signal()
-			}
-			for i := 0; i < totalRein; i++ {
-				reinDone.Wait()
-			}
-			reindeer = 0
-			mutex.Signal()
-		} else if elves == 3 {
-			helpElves()
-			// Libera os 3 elfos após ajudar
-			for i := 0; i < 3; i++ {
-				elfSem.Signal()
-			}
-			// espera os 3 elfos terminarem
-			for i := 0; i < 3; i++ {
-				elvesDone.Wait()
-			}
-			mutex.Signal()
-		} else {
-			mutex.Signal()
-		}
-		santaBusy.Signal()
-	}
-}
-
-// Reindeer process
-func reindeerFunc(id int) {
-	mutex.Wait()
-	reindeer++
-	if reindeer == totalRein {
-		santaSem.Signal()
-	}
-	mutex.Signal()
-
-	reinSem.Wait()
-	getHitched(id)
-	reinDone.Signal()
-
-}
-
-// Elf process
-func elfFunc(id int) {
+// elfo chega
+func elfArrives() {
+	// tenta pedir ajuda
 	elfTex.Wait()
+	// pede ajuda
 	mutex.Wait()
 	elves++
+
+	fmt.Println("Elfo: Pede Ajuda", elves)
+
+	// se for o terceiro elfo, acorda o Papai Noel
 	if elves == 3 {
 		santaSem.Signal()
+
 	} else {
+		// se não for o terceiro, libera o semáforo para outro elfo
 		elfTex.Signal()
+
 	}
 	mutex.Signal()
 
-	elfSem.Wait()
-	getHelp(id)
-	elvesDone.Signal()
+	// espera ajuda do Papai Noel
+	getHelp()
 
-
+	// elfo foi ajudado, sai
 	mutex.Wait()
 	elves--
+	// se for o último elfo a sair, libera o semáforo para outros elfos
 	if elves == 0 {
 		elfTex.Signal()
 	}
 	mutex.Signal()
 }
 
+// rena chega
+func reindeerArrives() {
+	// tenta entrar
+	mutex.Wait()
+	reindeer++
+	fmt.Println("Rena: Volta das férias", reindeer)
+
+	// se for a nona rena, acorda o Papai Noel
+	if reindeer == 9 {
+		for i := 0; i < 9; i++ {
+			santaSem.Signal()
+		}
+	}
+	mutex.Signal()
+
+	// espera ser presa ao trenó
+	reindeerSem.Wait()
+	getHitched()
+}
+
+// Papai Noel prepara o trenó
+func prepareSleigh() {
+	fmt.Println("Santa: Preparando o trenó")
+}
+
+// renas são presas ao trenó
+func getHitched() {
+	fmt.Println("Santa: Preparando as renas")
+	reindeerSem.Signal()
+}
+
+// Papai Noel ajuda os elfos
+func helpElves() {
+	fmt.Println("Santa: Ajudando os elfos", elves)
+	time.Sleep(1 * time.Second)
+}
+
+// elfos recebem ajuda
+func getHelp() {
+	fmt.Println("Elfos: Esperando ajuda", elves)
+	time.Sleep(1 * time.Second)
+}
+
+
 func main() {
-	go santa()
-
-	// Renas
-	for i := 1; i <= totalRein; i++ {
-		go reindeerFunc(i)
+	// inicia goroutines para a chegada dos elfos
+	for i := 1; i <= 1000; i++ {
+		go elfArrives()
 	}
 
-	// Elfos (pode ter muitos)
-	for i := 1; i <= 10; i++ {
-		go elfFunc(i)
+	// inicia goroutines para a chegada das renas
+	for i := 1; i <= 9; i++ {
+		go reindeerArrives()
 	}
 
-	time.Sleep(5 * time.Second) // tempo para simulação
+	//loop principal onde o Papai Noel verifica se precisa ajudar os elfos ou preparar o trenó
+	for {
+		// espera ser acordado por elfos ou renas
+		santaSem.Wait()
+		mutex.Wait()
+
+		// se todas as renas chegaram, prepara o trenó
+		if reindeer == 9 {
+			prepareSleigh()
+			reindeerSem.Signal()
+			fmt.Println("É Natal, entregando presentes!")
+			return
+		} else if elves == 3 {
+			// se três elfos estão esperando, ajuda os elfos
+			helpElves()
+		}
+
+		mutex.Signal()
+	}
 }

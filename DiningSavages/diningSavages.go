@@ -29,12 +29,12 @@
 
 // -------------------------------------------------------------------------
 // CÓDIGO COM SEMAFOROS:
+
 package main
 
 import (
 	"T2-FPPD/FPPDSemaforo"
 	"fmt"
-	"math/rand"
 	"time"
 )
 
@@ -44,10 +44,10 @@ const (
 )
 
 var (
-	servings = 0
-	mutex    = FPPDSemaforo.NewSemaphore(1) // protege acesso a servings
+	servings = 0 // porções no pote
+	mutex = FPPDSemaforo.NewSemaphore(1) // protege acesso a servings
 	emptyPot = FPPDSemaforo.NewSemaphore(0) // sinaliza pote vazio -> cozinheiro
-	fullPot  = FPPDSemaforo.NewSemaphore(0) // sinaliza pote cheio -> selvagem
+	fullPot = FPPDSemaforo.NewSemaphore(0) // sinaliza pote cheio -> selvagem
 )
 
 // encher pote
@@ -63,15 +63,16 @@ func getServingFromPot(id int, s int) {
 // comer
 func eat(id int) {
 	fmt.Printf("Selvagem %d está comendo.\n", id)
-	time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
 }
 
 // cozinheiro 
-// espera algum selvagem avisar pote vazio, enche o pote e sinaliza
 func cook() {
 	for {
+		// espera algum selvagem avisar pote vazio
 		emptyPot.Wait()
+		// enche o pote
 		putServingsInPot(M)
+		// sinaliza que o pote está cheio
 		fullPot.Signal()
 	}
 }
@@ -79,25 +80,30 @@ func cook() {
 // selvagem
 func savage(id int) {
 	for {
+		// tenta pegar porção
 		mutex.Wait()
-		// se vazio, avisa e espera
+		// se vazio 
 		if servings == 0 {
 			fmt.Printf("\n")
 			fmt.Printf("Selvagem %d está esperando.\n", id)
+			// avisa cozinheiro que o pote está vazio
 			emptyPot.Signal()
+			// espera o cozinheiro encher o pote
 			fullPot.Wait()
+			// atualiza porções no pote
 			servings = M
 		}
+		// pega porção
 		servings--
 		getServingFromPot(id, servings)
+		// libera acesso ao pote
 		mutex.Signal()
+		// come
 		eat(id)
 	}
 }
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	// inicia cozinheiro
 	go cook()
 
